@@ -144,19 +144,20 @@ function RafaelAddSheet({ data, onClose, onSave }: { data: RafaelData; onClose: 
 
 // ── Setup Sheet ───────────────────────────────────────────────────────────────
 function RafaelSetupSheet({ data, onClose, onSave }: { data: RafaelData; onClose: () => void; onSave: (d: RafaelData) => void }) {
-  const [debit,     setDebit]     = useState(String(data.accounts.debit.balance));
-  const [startDate, setStartDate] = useState(data.startDate);
-  const [useCredit, setUseCredit] = useState(data.accounts.credit.use);
-  const [creditBal, setCreditBal] = useState(String(data.accounts.credit.balance));
-  const [creditName,setCreditName]= useState(data.accounts.credit.name);
-  const [banks,     setBanks]     = useState(data.banks.map((b) => ({ ...b })));
-  const [step,      setStep]      = useState(0);
+  const [debit,       setDebit]       = useState(String(data.accounts.debit.balance));
+  const [startDate,   setStartDate]   = useState(data.startDate);
+  const [useCredit,   setUseCredit]   = useState(data.accounts.credit.use);
+  const [creditBal,   setCreditBal]   = useState(String(data.accounts.credit.balance));
+  const [creditName,  setCreditName]  = useState(data.accounts.credit.name);
+  const [creditPayDay,setCreditPayDay]= useState(data.accounts.credit.payDay ?? 0);
+  const [banks,       setBanks]       = useState(data.banks.map((b) => ({ ...b })));
+  const [step,        setStep]        = useState(0);
   const addBank = () => setBanks((b) => [...b, { id: "b" + Date.now(), name: "", balance: 0 }]);
   const finish = () => onSave({
     ...data, setupDone: true, startDate,
     accounts: {
       debit:  { ...data.accounts.debit,  balance: parseFloat(debit) || 0 },
-      credit: { name: creditName, use: useCredit, balance: parseFloat(creditBal) || 0 },
+      credit: { name: creditName, use: useCredit, balance: parseFloat(creditBal) || 0, payDay: creditPayDay || undefined },
     },
     banks: banks.filter((b) => b.name.trim()).map((b) => ({ ...b, balance: parseFloat(String(b.balance)) || 0 })),
   });
@@ -191,8 +192,20 @@ function RafaelSetupSheet({ data, onClose, onSave }: { data: RafaelData; onClose
               {useCredit && (<>
                 <div className="field"><span className="label">Card name</span>
                   <input className="input" value={creditName} onChange={(e) => setCreditName(e.target.value)} placeholder="e.g. Amex Platinum" /></div>
-                <div className="field"><span className="label">Current balance (negative if owed)</span>
-                  <input className="input num" inputMode="decimal" value={creditBal} onChange={(e) => setCreditBal(e.target.value.replace(/[^0-9.\-]/g, ""))} style={{ fontSize: 20, fontWeight: 700 }} /></div>
+                <div className="field">
+                  <span className="label">Current balance due <span className="muted">(how much you currently owe)</span></span>
+                  <input className="input num" inputMode="decimal" value={creditBal} onChange={(e) => setCreditBal(e.target.value.replace(/[^0-9.]/g, ""))} style={{ fontSize: 20, fontWeight: 700 }} placeholder="0.00" />
+                </div>
+                <div className="field">
+                  <span className="label">💳 Pay-in-full due day <span className="muted">(day of month you pay the full balance)</span></span>
+                  <div className="card" style={{ boxShadow: "none", padding: "10px 14px", background: "var(--surface-2)", display: "flex", alignItems: "center", gap: 12 }}>
+                    <input type="range" min="1" max="28" step="1" value={creditPayDay || 1} onChange={(e) => setCreditPayDay(parseInt(e.target.value, 10))} style={{ flex: 1 }} />
+                    <span className="chip" style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{creditPayDay ? ordinal(creditPayDay) : "not set"}</span>
+                  </div>
+                  <button className="btn ghost" style={{ alignSelf: "flex-start", fontSize: 12 }} onClick={() => setCreditPayDay(0)}>
+                    clear (don&apos;t show reminder)
+                  </button>
+                </div>
               </>)}
             </div>
           )}
@@ -229,9 +242,9 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
   const n      = dayIndex(rStart, rEnd) + 1;
 
   const accountDefs = [
-    { id: "debit",  name: data.accounts.debit.name  },
-    ...(data.accounts.credit.use ? [{ id: "credit", name: data.accounts.credit.name }] : []),
-    ...data.banks.map((b) => ({ id: b.id, name: b.name })),
+    { id: "debit",  name: data.accounts.debit.name,  isCredit: false },
+    ...(data.accounts.credit.use ? [{ id: "credit", name: data.accounts.credit.name, isCredit: true }] : []),
+    ...data.banks.map((b) => ({ id: b.id, name: b.name, isCredit: false })),
   ];
   const bal: Record<string, number> = {
     debit: data.accounts.debit.balance,
@@ -243,6 +256,17 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
   const dayEvents:  DayEvent[][] = Array.from({ length: n }, () => []);
   const dayDeltas:  Record<string, number>[] = Array.from({ length: n }, () => ({}));
 
+  // Helper: apply a delta to an account, respecting credit-card liability direction.
+  // Credit card balance = amount owed (positive = debt). Spending INCREASES it.
+  const applyDelta = (dayIdx: number, accountId: string, delta: number) => {
+    if (accountId === "credit") {
+      // Credit is a liability — invert direction
+      dayDeltas[dayIdx][accountId] = (dayDeltas[dayIdx][accountId] || 0) - delta;
+    } else {
+      dayDeltas[dayIdx][accountId] = (dayDeltas[dayIdx][accountId] || 0) + delta;
+    }
+  };
+
   for (const e of data.entries) {
     const occ    = expandOccurrences(e.recurrence, rStart, rEnd);
     const signed = e.type === "income" ? e.amount : e.type === "expense" ? -e.amount : 0;
@@ -250,13 +274,11 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
       const idx = dayIndex(rStart, od);
       if (idx < 0 || idx >= n) continue;
       dayEvents[idx].push({ entry: e, signed });
-      if (e.type === "income"   && e.account)
-        dayDeltas[idx][e.account] = (dayDeltas[idx][e.account] || 0) + e.amount;
-      if (e.type === "expense"  && e.account)
-        dayDeltas[idx][e.account] = (dayDeltas[idx][e.account] || 0) - e.amount;
+      if (e.type === "income"  && e.account) applyDelta(idx, e.account,   e.amount);
+      if (e.type === "expense" && e.account) applyDelta(idx, e.account,  -e.amount);
       if (e.type === "transfer" && e.account && e.toAccount) {
-        dayDeltas[idx][e.account]    = (dayDeltas[idx][e.account]    || 0) - e.amount;
-        dayDeltas[idx][e.toAccount]  = (dayDeltas[idx][e.toAccount]  || 0) + e.amount;
+        applyDelta(idx, e.account,   -e.amount);
+        applyDelta(idx, e.toAccount,  e.amount);
       }
     }
   }
@@ -264,7 +286,7 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
   const activeDays: {
     date: Date;
     events: DayEvent[];
-    accountBals: { id: string; name: string; balance: number }[];
+    accountBals: { id: string; name: string; isCredit: boolean; balance: number }[];
     total: number;
     net: number;
   }[] = [];
@@ -275,11 +297,12 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
     }
     if (dayEvents[i].length > 0) {
       const net   = dayEvents[i].reduce((s, ev) => s + ev.signed, 0);
-      const total = accountDefs.reduce((s, a) => s + (bal[a.id] ?? 0), 0);
+      // Credit is a liability — subtract it from total net worth
+      const total = accountDefs.reduce((s, a) => s + (a.isCredit ? -(bal[a.id] ?? 0) : (bal[a.id] ?? 0)), 0);
       activeDays.push({
         date: addDays(rStart, i),
         events: dayEvents[i],
-        accountBals: accountDefs.map((a) => ({ ...a, balance: bal[a.id] ?? 0 })),
+        accountBals: accountDefs.map((a) => ({ id: a.id, name: a.name, isCredit: a.isCredit, balance: bal[a.id] ?? 0 })),
         total,
         net,
       });
@@ -289,38 +312,83 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
   return { activeDays, accounts: accountDefs };
 }
 
-function DailyReport({ data, currency, canEdit, range, setRange, onDelete }: {
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function DailyReport({ data, currency, canEdit, onDelete }: {
   data: RafaelData; currency: Currency; canEdit: boolean;
-  range: string; setRange: (r: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const months = RANGE_OPTIONS.find((r: RangeOption) => r.key === range)!.months;
-  const { activeDays, accounts } = useMemo(
-    () => buildDailyBreakdown(data, months),
-    [data, months], // eslint-disable-line react-hooks/exhaustive-deps
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+
+  // Always compute full year so account balances are accurate across months
+  const { activeDays: allDays, accounts } = useMemo(
+    () => buildDailyBreakdown(data, 12),
+    [data], // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  // Credit pay day reminders
+  const creditPayDay = data.accounts.credit.use ? (data.accounts.credit.payDay ?? 0) : 0;
+
+  // Filter to selected month, and inject credit payment reminder if set
+  const monthDays = useMemo(() => {
+    const days = allDays.filter(
+      (d) => d.date.getFullYear() === currentYear && d.date.getMonth() === selectedMonth,
+    );
+    // Add credit payment reminder day if it falls in this month and has no other events
+    if (creditPayDay > 0) {
+      const reminderDate = new Date(currentYear, selectedMonth, creditPayDay);
+      const alreadyPresent = days.some((d) => d.date.getDate() === creditPayDay);
+      if (!alreadyPresent) {
+        days.push({ date: reminderDate, events: [], accountBals: [], total: 0, net: 0, isCreditReminder: true } as never);
+        days.sort((a, b) => a.date.getTime() - b.date.getTime());
+      }
+    }
+    return days;
+  }, [allDays, selectedMonth, currentYear, creditPayDay]);
+
   const today = startOfDay(new Date());
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      {/* Header row */}
+      {/* Header */}
       <div className="between" style={{ flexWrap: "wrap", gap: 10 }}>
         <div className="stack" style={{ gap: 2 }}>
           <span className="display" style={{ fontSize: 22 }}>Daily money flow</span>
           <span className="muted" style={{ fontSize: 12.5 }}>Every event + account balances, day by day</span>
         </div>
-        <div className="seg" style={{ flexWrap: "wrap" }}>
-          {RANGE_OPTIONS.map((r: RangeOption) => (
-            <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)}>{r.label}</button>
-          ))}
-        </div>
       </div>
 
-      {activeDays.length === 0 && (
-        <p className="muted center" style={{ padding: "30px 0", fontSize: 14 }}>No transactions to show for this range.</p>
+      {/* Month tabs */}
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {MONTH_NAMES.map((m, i) => (
+          <button key={m} onClick={() => setSelectedMonth(i)}
+            className={selectedMonth === i ? "btn primary" : "btn ghost"}
+            style={{ padding: "6px 12px", fontSize: 12.5, minWidth: 44 }}>
+            {m}
+          </button>
+        ))}
+      </div>
+
+      {monthDays.length === 0 && (
+        <p className="muted center" style={{ padding: "30px 0", fontSize: 14 }}>No activity in {MONTH_NAMES[selectedMonth]}.</p>
       )}
 
-      {activeDays.map((day, di) => {
+      {monthDays.map((day, di) => {
+        // Credit payment reminder day (no transactions)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((day as any).isCreditReminder) {
+          return (
+            <div key={di} className="card" style={{ padding: "14px 18px", display: "flex", gap: 12, alignItems: "center", background: "color-mix(in oklch,var(--accent) 8%,var(--surface))", border: "1.5px solid color-mix(in oklch,var(--accent) 30%,var(--line))" }}>
+              <span style={{ fontSize: 22 }}>💳</span>
+              <div className="stack" style={{ gap: 2 }}>
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>Credit card payment due — {ordinal(creditPayDay)}</span>
+                <span className="muted" style={{ fontSize: 12 }}>Pay in full to avoid interest · {data.accounts.credit.name}</span>
+              </div>
+            </div>
+          );
+        }
         const isPast   = day.date < today;
         const isToday  = fmtDate(day.date) === fmtDate(today);
         const dateLabel = isToday ? "Today" : fmtDate(day.date, { weekday: "short", month: "short", day: "numeric" });
@@ -374,13 +442,15 @@ function DailyReport({ data, currency, canEdit, range, setRange, onDelete }: {
             <div style={{ padding: "10px 18px", display: "flex", flexWrap: "wrap", gap: "6px 18px", background: "color-mix(in oklch,var(--accent) 5%,var(--surface))", borderTop: "1px solid var(--line-soft)" }}>
               {day.accountBals.map((a) => (
                 <span key={a.id} style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
-                  <span className="muted">{a.name}: </span>
-                  <span className="num" style={{ fontWeight: 700, color: a.balance < 0 ? "var(--neg)" : "var(--txt)" }}>{fmtMoney(a.balance, currency)}</span>
+                  <span className="muted">{a.name}{a.isCredit ? " (owed)" : ""}: </span>
+                  <span className="num" style={{ fontWeight: 700, color: a.isCredit ? "var(--neg)" : a.balance < 0 ? "var(--neg)" : "var(--txt)" }}>
+                    {a.isCredit && a.balance > 0 ? "−" : ""}{fmtMoney(a.balance, currency)}
+                  </span>
                 </span>
               ))}
               {accounts.length > 1 && (
                 <span style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
-                  <span className="muted">Total: </span>
+                  <span className="muted">Net worth: </span>
                   <span className="num" style={{ fontWeight: 700, color: day.total < 0 ? "var(--neg)" : "var(--accent)" }}>{fmtMoney(day.total, currency)}</span>
                 </span>
               )}
@@ -571,9 +641,9 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
   }
 
   const holdings = [
-    { name: data.accounts.debit.name,  bal: data.accounts.debit.balance,  ic: "card" },
-    ...(data.accounts.credit.use ? [{ name: data.accounts.credit.name, bal: data.accounts.credit.balance, ic: "card" }] : []),
-    ...data.banks.map((b) => ({ name: b.name, bal: b.balance, ic: "bank" })),
+    { name: data.accounts.debit.name,  bal: data.accounts.debit.balance,  ic: "card",  isCredit: false },
+    ...(data.accounts.credit.use ? [{ name: data.accounts.credit.name, bal: data.accounts.credit.balance, ic: "card", isCredit: true }] : []),
+    ...data.banks.map((b) => ({ name: b.name, bal: b.balance, ic: "bank", isCredit: false })),
   ];
 
   const now = new Date();
@@ -609,8 +679,13 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}>
             {holdings.map((h, i) => (
               <div key={i} className="card" style={{ padding: 16, boxShadow: "none" }}>
-                <div className="row" style={{ gap: 8, color: "var(--accent)" }}><Icon name={h.ic} size={16} /><span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{h.name}</span></div>
-                <div className="num" style={{ fontSize: 20, fontWeight: 700, marginTop: 8, color: h.bal < 0 ? "var(--neg)" : "var(--txt)" }}>{fmtMoney(h.bal, currency)}</div>
+                <div className="row" style={{ gap: 8, color: h.isCredit ? "var(--neg)" : "var(--accent)" }}>
+                  <Icon name={h.ic} size={16} />
+                  <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>{h.name}{h.isCredit ? " · owed" : ""}</span>
+                </div>
+                <div className="num" style={{ fontSize: 20, fontWeight: 700, marginTop: 8, color: h.isCredit ? "var(--neg)" : h.bal < 0 ? "var(--neg)" : "var(--txt)" }}>
+                  {h.isCredit && h.bal > 0 ? "−" : ""}{fmtMoney(h.bal, currency)}
+                </div>
               </div>
             ))}
           </div>
@@ -627,7 +702,7 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
           {data.entries.length === 0 ? (
             <p className="muted center" style={{ padding: 30 }}>No transactions yet — add one above.</p>
           ) : (
-            <DailyReport data={data} currency={currency} canEdit={canEdit} range={range} setRange={setRange} onDelete={handleDelete} />
+            <DailyReport data={data} currency={currency} canEdit={canEdit} onDelete={handleDelete} />
           )}
         </div>
 

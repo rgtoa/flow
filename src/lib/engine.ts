@@ -353,7 +353,9 @@ export function ordinal(n: number): string {
 
 // ── Rafael opening balance ────────────────────────────────────────────────────
 export function rafOpening(data: RafaelData): number {
-  let s = data.accounts.debit.balance + (data.accounts.credit.use ? data.accounts.credit.balance : 0);
+  // Credit card balance is stored as a positive "amount owed" — it's a liability,
+  // so it's subtracted from net worth.
+  let s = data.accounts.debit.balance - (data.accounts.credit.use ? data.accounts.credit.balance : 0);
   for (const b of data.banks) s += b.balance;
   return s;
 }

@@ -27,7 +27,7 @@ export type Entry = {
 };
 
 // ── Rafael ───────────────────────────────────────────────────────────────────
-export type AccountInfo = { name: string; balance: number; use: boolean };
+export type AccountInfo = { name: string; balance: number; use: boolean; payDay?: number };
 export type BankInfo    = { id: string; name: string; balance: number };
 
 export type RafaelData = {
