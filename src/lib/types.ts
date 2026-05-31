@@ -27,7 +27,12 @@ export type Entry = {
 };
 
 // ── Rafael ───────────────────────────────────────────────────────────────────
-export type AccountInfo = { name: string; balance: number; use: boolean; payDay?: number };
+export type AccountInfo = {
+  name: string; balance: number; use: boolean;
+  statementDay?: number; // day statement closes (e.g. 5th)
+  payDay?:       number; // day you plan to pay in full
+  dueDay?:       number; // actual bank deadline
+};
 export type BankInfo    = { id: string; name: string; balance: number };
 
 export type RafaelData = {

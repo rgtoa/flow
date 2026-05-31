@@ -144,20 +144,22 @@ function RafaelAddSheet({ data, onClose, onSave }: { data: RafaelData; onClose: 
 
 // ── Setup Sheet ───────────────────────────────────────────────────────────────
 function RafaelSetupSheet({ data, onClose, onSave }: { data: RafaelData; onClose: () => void; onSave: (d: RafaelData) => void }) {
-  const [debit,       setDebit]       = useState(String(data.accounts.debit.balance));
-  const [startDate,   setStartDate]   = useState(data.startDate);
-  const [useCredit,   setUseCredit]   = useState(data.accounts.credit.use);
-  const [creditBal,   setCreditBal]   = useState(String(data.accounts.credit.balance));
-  const [creditName,  setCreditName]  = useState(data.accounts.credit.name);
-  const [creditPayDay,setCreditPayDay]= useState(data.accounts.credit.payDay ?? 0);
-  const [banks,       setBanks]       = useState(data.banks.map((b) => ({ ...b })));
-  const [step,        setStep]        = useState(0);
+  const [debit,          setDebit]          = useState(String(data.accounts.debit.balance));
+  const [startDate,      setStartDate]      = useState(data.startDate);
+  const [useCredit,      setUseCredit]      = useState(data.accounts.credit.use);
+  const [creditBal,      setCreditBal]      = useState(String(data.accounts.credit.balance));
+  const [creditName,     setCreditName]     = useState(data.accounts.credit.name);
+  const [creditStmtDay,  setCreditStmtDay]  = useState(data.accounts.credit.statementDay ?? 5);
+  const [creditPayDay,   setCreditPayDay]   = useState(data.accounts.credit.payDay ?? 20);
+  const [creditDueDay,   setCreditDueDay]   = useState(data.accounts.credit.dueDay ?? 28);
+  const [banks,          setBanks]          = useState(data.banks.map((b) => ({ ...b })));
+  const [step,           setStep]           = useState(0);
   const addBank = () => setBanks((b) => [...b, { id: "b" + Date.now(), name: "", balance: 0 }]);
   const finish = () => onSave({
     ...data, setupDone: true, startDate,
     accounts: {
       debit:  { ...data.accounts.debit,  balance: parseFloat(debit) || 0 },
-      credit: { name: creditName, use: useCredit, balance: parseFloat(creditBal) || 0, payDay: creditPayDay || undefined },
+      credit: { name: creditName, use: useCredit, balance: parseFloat(creditBal) || 0, statementDay: useCredit ? creditStmtDay : undefined, payDay: useCredit ? creditPayDay : undefined, dueDay: useCredit ? creditDueDay : undefined },
     },
     banks: banks.filter((b) => b.name.trim()).map((b) => ({ ...b, balance: parseFloat(String(b.balance)) || 0 })),
   });
@@ -190,22 +192,29 @@ function RafaelSetupSheet({ data, onClose, onSave }: { data: RafaelData; onClose
                 <button className={!useCredit ? "on" : ""} onClick={() => setUseCredit(false)}>No</button>
               </div>
               {useCredit && (<>
-                <div className="field"><span className="label">Card name</span>
-                  <input className="input" value={creditName} onChange={(e) => setCreditName(e.target.value)} placeholder="e.g. Amex Platinum" /></div>
                 <div className="field">
-                  <span className="label">Current balance due <span className="muted">(how much you currently owe)</span></span>
+                  <span className="label">Card name</span>
+                  <input className="input" value={creditName} onChange={(e) => setCreditName(e.target.value)} placeholder="e.g. Amex Platinum" />
+                </div>
+                <div className="field">
+                  <span className="label">Current balance due <span className="muted">(how much you currently owe on the card)</span></span>
                   <input className="input num" inputMode="decimal" value={creditBal} onChange={(e) => setCreditBal(e.target.value.replace(/[^0-9.]/g, ""))} style={{ fontSize: 20, fontWeight: 700 }} placeholder="0.00" />
                 </div>
-                <div className="field">
-                  <span className="label">💳 Pay-in-full due day <span className="muted">(day of month you pay the full balance)</span></span>
-                  <div className="card" style={{ boxShadow: "none", padding: "10px 14px", background: "var(--surface-2)", display: "flex", alignItems: "center", gap: 12 }}>
-                    <input type="range" min="1" max="28" step="1" value={creditPayDay || 1} onChange={(e) => setCreditPayDay(parseInt(e.target.value, 10))} style={{ flex: 1 }} />
-                    <span className="chip" style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{creditPayDay ? ordinal(creditPayDay) : "not set"}</span>
+                {/* Three billing cycle dates */}
+                {[
+                  { label: "📋 Statement date", sub: "Day your monthly statement closes — transactions after this go to next month's bill", val: creditStmtDay,  set: setCreditStmtDay  },
+                  { label: "💰 Planned pay date", sub: "Day you personally plan to pay the full statement balance", val: creditPayDay,   set: setCreditPayDay   },
+                  { label: "⏰ Bank due date",    sub: "Actual deadline set by the bank — latest you can pay without penalty", val: creditDueDay,   set: setCreditDueDay   },
+                ].map(({ label, sub, val, set }) => (
+                  <div key={label} className="field">
+                    <span className="label">{label}</span>
+                    <span className="muted" style={{ fontSize: 11.5, marginTop: -4 }}>{sub}</span>
+                    <div className="card" style={{ boxShadow: "none", padding: "10px 14px", background: "var(--surface-2)", display: "flex", alignItems: "center", gap: 12 }}>
+                      <input type="range" min="1" max="28" step="1" value={val} onChange={(e) => set(parseInt(e.target.value, 10))} style={{ flex: 1 }} />
+                      <span className="chip" style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{ordinal(val)} of each month</span>
+                    </div>
                   </div>
-                  <button className="btn ghost" style={{ alignSelf: "flex-start", fontSize: 12 }} onClick={() => setCreditPayDay(0)}>
-                    clear (don&apos;t show reminder)
-                  </button>
-                </div>
+                ))}
               </>)}
             </div>
           )}
@@ -328,25 +337,33 @@ function DailyReport({ data, currency, canEdit, onDelete }: {
     [data], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Credit pay day reminders
-  const creditPayDay = data.accounts.credit.use ? (data.accounts.credit.payDay ?? 0) : 0;
+  // Credit card billing cycle config
+  const cc = data.accounts.credit.use ? data.accounts.credit : null;
+  const creditStmtDay = cc?.statementDay ?? 0;
+  const creditPayDay  = cc?.payDay       ?? 0;
+  const creditDueDay  = cc?.dueDay       ?? 0;
 
-  // Filter to selected month, and inject credit payment reminder if set
+  // Filter to selected month + inject CC billing reminders
   const monthDays = useMemo(() => {
     const days = allDays.filter(
       (d) => d.date.getFullYear() === currentYear && d.date.getMonth() === selectedMonth,
     );
-    // Add credit payment reminder day if it falls in this month and has no other events
-    if (creditPayDay > 0) {
-      const reminderDate = new Date(currentYear, selectedMonth, creditPayDay);
-      const alreadyPresent = days.some((d) => d.date.getDate() === creditPayDay);
-      if (!alreadyPresent) {
-        days.push({ date: reminderDate, events: [], accountBals: [], total: 0, net: 0, isCreditReminder: true } as never);
-        days.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    // Inject reminder markers for each set CC date (if not already an event day)
+    const reminders: { day: number; kind: "statement"|"pay"|"due" }[] = [];
+    if (creditStmtDay) reminders.push({ day: creditStmtDay, kind: "statement" });
+    if (creditPayDay)  reminders.push({ day: creditPayDay,  kind: "pay"       });
+    if (creditDueDay)  reminders.push({ day: creditDueDay,  kind: "due"       });
+
+    for (const r of reminders) {
+      if (!days.some((d) => d.date.getDate() === r.day)) {
+        const rd = new Date(currentYear, selectedMonth, r.day);
+        days.push({ date: rd, events: [], accountBals: [], total: 0, net: 0, creditReminder: r.kind } as never);
       }
     }
+    days.sort((a, b) => a.date.getTime() - b.date.getTime());
     return days;
-  }, [allDays, selectedMonth, currentYear, creditPayDay]);
+  }, [allDays, selectedMonth, currentYear, creditStmtDay, creditPayDay, creditDueDay]);
 
   const today = startOfDay(new Date());
 
@@ -376,15 +393,23 @@ function DailyReport({ data, currency, canEdit, onDelete }: {
       )}
 
       {monthDays.map((day, di) => {
-        // Credit payment reminder day (no transactions)
+        // Credit card billing cycle reminder cards
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ((day as any).isCreditReminder) {
+        const reminder = (day as any).creditReminder as "statement"|"pay"|"due"|undefined;
+        if (reminder) {
+          const configs = {
+            statement: { icon: "📋", color: "var(--transfer)", title: `${cc?.name ?? "Credit card"} statement closes`, sub: "Transactions after today go to next month's bill" },
+            pay:       { icon: "💰", color: "var(--pos)",      title: `Planned payment — ${cc?.name ?? "credit card"}`, sub: "Your target day to pay the full statement balance" },
+            due:       { icon: "⏰", color: "var(--neg)",      title: `Payment deadline — ${cc?.name ?? "credit card"}`, sub: "Last day to pay without penalty" },
+          };
+          const cfg = configs[reminder];
+          const dateLabel = fmtDate(day.date, { weekday: "short", month: "short", day: "numeric" });
           return (
-            <div key={di} className="card" style={{ padding: "14px 18px", display: "flex", gap: 12, alignItems: "center", background: "color-mix(in oklch,var(--accent) 8%,var(--surface))", border: "1.5px solid color-mix(in oklch,var(--accent) 30%,var(--line))" }}>
-              <span style={{ fontSize: 22 }}>💳</span>
-              <div className="stack" style={{ gap: 2 }}>
-                <span style={{ fontWeight: 700, fontSize: 13.5 }}>Credit card payment due — {ordinal(creditPayDay)}</span>
-                <span className="muted" style={{ fontSize: 12 }}>Pay in full to avoid interest · {data.accounts.credit.name}</span>
+            <div key={di} className="card" style={{ padding: "14px 18px", display: "flex", gap: 12, alignItems: "center", border: `1.5px solid color-mix(in oklch,${cfg.color} 35%,var(--line))`, background: `color-mix(in oklch,${cfg.color} 7%,var(--surface))` }}>
+              <span style={{ fontSize: 22 }}>{cfg.icon}</span>
+              <div className="stack" style={{ gap: 2, flex: 1 }}>
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{cfg.title}</span>
+                <span className="muted" style={{ fontSize: 12 }}>{dateLabel} · {cfg.sub}</span>
               </div>
             </div>
           );
@@ -423,6 +448,16 @@ function DailyReport({ data, currency, canEdit, onDelete }: {
                         {accountName(data, ev.entry.account ?? "")}
                         {ev.entry.type === "transfer" ? " → " + accountName(data, ev.entry.toAccount ?? "") : ""}
                         {" · "}{recurrenceLabel(ev.entry.recurrence)}
+                        {/* Billing cycle label for CC transactions */}
+                        {ev.entry.account === "credit" && creditStmtDay > 0 && (() => {
+                          const d = day.date.getDate();
+                          const m = day.date.getMonth();
+                          const y = day.date.getFullYear();
+                          const afterStmt = d > creditStmtDay;
+                          const billingMonth = afterStmt ? new Date(y, m + 1) : new Date(y, m);
+                          const dueLabel = new Date(billingMonth.getFullYear(), billingMonth.getMonth(), creditDueDay || 28).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                          return <span style={{ color: "var(--transfer)", marginLeft: 4 }}>→ billed {afterStmt ? "next" : "this"} month (due {dueLabel})</span>;
+                        })()}
                       </span>
                     </div>
                     <span className="num" style={{ fontWeight: 700, fontSize: 14.5, color: col, whiteSpace: "nowrap", flexShrink: 0 }}>

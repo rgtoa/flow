@@ -53,7 +53,7 @@ export function assembleRafaelData(
     lastUpdated: settings ? new Date(settings.updated_at).getTime() : Date.now(),
     accounts: {
       debit:  { name: debit?.name  ?? "Debit Â· Default", balance: Number(debit?.balance  ?? 0), use: true },
-      credit: { name: credit?.name ?? "Credit card", balance: Number(credit?.balance ?? 0), use: credit?.is_active ?? false, payDay: credit?.pay_day ?? undefined },
+      credit: { name: credit?.name ?? "Credit card", balance: Number(credit?.balance ?? 0), use: credit?.is_active ?? false, statementDay: credit?.statement_day ?? undefined, payDay: credit?.pay_day ?? undefined, dueDay: credit?.due_day ?? undefined },
     },
     banks:   banks.map((b) => ({ id: b.id, name: b.name, balance: Number(b.balance) })),
     entries: entries.map(dbEntryToEntry),
@@ -146,7 +146,7 @@ export async function persistRafaelSetup(
 
   const rows: DB["accounts"]["Insert"][] = [];
   rows.push({ user_id: userId, account_key: "debit",  name: data.accounts.debit.name,  balance: data.accounts.debit.balance,  account_type: "debit",  is_active: true,                      sort_order: 0 });
-  rows.push({ user_id: userId, account_key: "credit", name: data.accounts.credit.name, balance: data.accounts.credit.balance, account_type: "credit", is_active: data.accounts.credit.use, sort_order: 1, pay_day: data.accounts.credit.payDay ?? null });
+  rows.push({ user_id: userId, account_key: "credit", name: data.accounts.credit.name, balance: data.accounts.credit.balance, account_type: "credit", is_active: data.accounts.credit.use, sort_order: 1, statement_day: data.accounts.credit.statementDay ?? null, pay_day: data.accounts.credit.payDay ?? null, due_day: data.accounts.credit.dueDay ?? null });
   data.banks.forEach((b, i) => rows.push({ user_id: userId, account_key: b.id, name: b.name, balance: b.balance, account_type: "bank", is_active: true, sort_order: 2 + i }));
   if (rows.length) {
     const { error: accErr } = await supabase.from("accounts").insert(rows);

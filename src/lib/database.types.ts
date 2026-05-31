@@ -14,9 +14,9 @@ export type Database = {
         Update: { setup_done?: boolean; start_date?: string|null; monthly_income?: number; payday?: number; last_rollover?: string|null };
       };
       accounts: {
-        Row:    { id: string; user_id: string; account_key: string; name: string; balance: number; account_type: string; is_active: boolean; sort_order: number; pay_day: number|null };
-        Insert: { id?: string; user_id: string; account_key: string; name: string; balance?: number; account_type: string; is_active?: boolean; sort_order?: number; pay_day?: number|null };
-        Update: { name?: string; balance?: number; is_active?: boolean; pay_day?: number|null };
+        Row:    { id: string; user_id: string; account_key: string; name: string; balance: number; account_type: string; is_active: boolean; sort_order: number; statement_day: number|null; pay_day: number|null; due_day: number|null };
+        Insert: { id?: string; user_id: string; account_key: string; name: string; balance?: number; account_type: string; is_active?: boolean; sort_order?: number; statement_day?: number|null; pay_day?: number|null; due_day?: number|null };
+        Update: { name?: string; balance?: number; is_active?: boolean; statement_day?: number|null; pay_day?: number|null; due_day?: number|null };
       };
       entries: {
         Row:    { id: string; user_id: string; type: string; amount: number; account_key: string|null; to_account_key: string|null; division_ref: string|null; category: string|null; note: string; recurrence: unknown; created_at: string };
