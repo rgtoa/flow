@@ -462,7 +462,7 @@ function ThrishaAddSheet({ data, onClose, onSave }: { data: ThrishaData; onClose
         <div className="sheet-body">
 
           {/* Tab selector */}
-          <div className="seg" style={{ alignSelf: "center" }}>
+          <div className="seg" style={{ alignSelf: "center", flexWrap: "wrap", justifyContent: "center" }}>
             <button className={tab === "income"  ? "on" : ""} onClick={() => setTab("income")}>💵 income</button>
             <button className={tab === "expense" ? "on" : ""} onClick={() => setTab("expense")}>🛍️ expense</button>
             {savGoals.length > 0 && <button className={tab === "save" ? "on" : ""} onClick={() => setTab("save")}>🏦 save</button>}

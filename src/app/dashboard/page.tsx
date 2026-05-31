@@ -44,32 +44,33 @@ export default async function DashboardPage() {
             zIndex: 2,
           }}
         >
-          <div className="wrap between" style={{ padding: "12px 0", minHeight: 64 }}>
-            <span className="display" style={{ fontSize: "clamp(16px,3vw,22px)" }}>
+          <div className="wrap between" style={{ paddingTop: 12, paddingBottom: 12, minHeight: 56, flexWrap: "wrap", gap: 8 }}>
+            <span className="display" style={{ fontSize: "clamp(15px,3vw,22px)", whiteSpace: "nowrap" }}>
               {profile.display_name}&apos;s {isRafael ? "Portfolio" : "Garden"}
             </span>
 
-            <div className="row" style={{ gap: 10 }}>
-              {/* Peek at partner */}
+            <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+              {/* Peek at partner — show full label on ≥600px, emoji-only below */}
               <a
                 href={`/dashboard/${partnerSlug}`}
                 className="btn ghost"
                 style={{
-                  padding: "8px 14px", fontSize: 12.5,
+                  padding: "8px 12px", fontSize: 12.5,
                   textDecoration: "none",
-                  display: "inline-flex", alignItems: "center", gap: 7,
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  whiteSpace: "nowrap",
                 }}
               >
-                👀 {partnerLabel}
+                👀 <span className="tg-label">{partnerLabel}</span>
               </a>
 
               <form action={signOut}>
                 <button
                   type="submit"
                   className="btn ghost"
-                  style={{ padding: "8px 12px", fontSize: 12.5 }}
+                  style={{ padding: "8px 12px", fontSize: 12.5, whiteSpace: "nowrap" }}
                 >
-                  🔒 lock
+                  🔒 <span className="tg-label">lock</span>
                 </button>
               </form>
             </div>

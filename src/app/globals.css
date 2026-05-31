@@ -286,3 +286,30 @@ input[type="range"]::-moz-range-thumb {
   .tg-label { display: none; }
   .seg button { padding: 9px 13px; }
 }
+
+/* ============================================================
+   MOBILE — iPhone 13 and up (390 px logical)
+   ============================================================ */
+@media (max-width: 500px) {
+  /* Tighter horizontal padding so content breathes without overflow */
+  .wrap { padding: 0 14px; }
+
+  /* Sheets: push to 96 % height so they clear iOS's bottom bar */
+  .sheet { max-height: 96%; }
+  .sheet-head { padding: 16px 18px; }
+  .sheet-body { padding: 16px 18px; gap: 14px; }
+  .sheet-foot { padding: 14px 18px; }
+
+  /* Slightly smaller default button padding to save horizontal space */
+  .btn { padding: 11px 18px; }
+  .btn.lg { padding: 14px 22px; }
+
+  /* Ensure rows with many children wrap rather than overflow */
+  .row { flex-wrap: wrap; }
+
+  /* Chips: allow text to wrap if needed */
+  .chip { white-space: normal; }
+
+  /* Range inputs: full width on mobile */
+  input[type="range"] { width: 100%; }
+}

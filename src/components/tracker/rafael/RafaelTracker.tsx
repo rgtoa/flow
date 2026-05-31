@@ -518,7 +518,7 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
 
         {/* Money moves */}
         <div className="card" style={{ padding: "8px 20px 16px" }}>
-          <div className="between" style={{ padding: "14px 0 6px" }}>
+          <div className="between" style={{ padding: "14px 0 6px", flexWrap: "wrap", gap: 10 }}>
             <span className="display" style={{ fontSize: 21 }}>Money moves</span>
             {canEdit && <button className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} /> {c.addCta}</button>}
           </div>
