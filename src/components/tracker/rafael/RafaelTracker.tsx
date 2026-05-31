@@ -6,7 +6,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  buildProjection, rafOpening, fmtMoney, fmtDate,
+  buildProjection, rafOpening, fmtMoney, fmtDate, isoDate,
   parseDate, startOfDay, addDays, addMonths, dayIndex, expandOccurrences,
   RANGE_OPTIONS, EXPENSE_CATS, recurrenceLabel, todayISO,
   COPY, ordinal, pick,
@@ -49,19 +49,20 @@ function accountName(data: RafaelData, id: string): string {
 
 // ── Add Transaction Sheet ─────────────────────────────────────────────────────
 function RafaelAddSheet({ data, onClose, onSave }: { data: RafaelData; onClose: () => void; onSave: (e: Entry) => void }) {
-  const [type, setType] = useState<"income"|"expense"|"transfer">("expense");
-  const [amount, setAmount] = useState("");
-  const [account, setAccount] = useState("debit");
-  const [toAccount, setToAccount] = useState(data.banks[0]?.id ?? "credit");
-  const [category, setCategory] = useState<string>("Bill");
-  const [note, setNote] = useState("");
-  const [rec, setRec] = useState<Recurrence>({ kind: "monthly", startDate: todayISO() });
+  const [type,            setType]           = useState<"income"|"expense"|"transfer">("expense");
+  const [amount,          setAmount]         = useState("");
+  const [account,         setAccount]        = useState("debit");
+  const [toAccount,       setToAccount]      = useState(data.banks[0]?.id ?? "credit");
+  const [category,        setCategory]       = useState<string>("Bill");
+  const [incomeCategory,  setIncomeCategory] = useState<string>("Salary");
+  const [note,            setNote]           = useState("");
+  const [rec,             setRec]            = useState<Recurrence>({ kind: "monthly", startDate: todayISO() });
   const opts = accountOptions(data);
   const valid = parseFloat(amount) > 0 && (type !== "transfer" || account !== toAccount);
   const save = () => onSave({
     id: crypto.randomUUID(), type, amount: parseFloat(amount),
     account, toAccount: type === "transfer" ? toAccount : undefined,
-    category: type === "expense" ? category : type === "income" ? "Income" : "Transfer",
+    category: type === "expense" ? category : type === "income" ? (incomeCategory.trim() || "Income") : "Transfer",
     note, recurrence: rec,
   });
   return (
@@ -99,30 +100,35 @@ function RafaelAddSheet({ data, onClose, onSave }: { data: RafaelData; onClose: 
               </div>
             )}
           </div>
+          {type === "income" && (
+            <div className="field">
+              <span className="label">Income type <span className="muted">(what kind of income is this?)</span></span>
+              <input
+                className="input"
+                placeholder="e.g. Salary, Freelance, Dividends, Bonus…"
+                value={incomeCategory}
+                onChange={(e) => setIncomeCategory(e.target.value)}
+                autoFocus
+              />
+              <div className="row" style={{ flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                {["Salary","Freelance","Dividends","Bonus","Side gig","Rental","Other"].map((c) => (
+                  <button key={c} className="chip" style={{ cursor: "pointer", fontSize: 11.5, borderColor: incomeCategory === c ? "var(--accent)" : "var(--line)", color: incomeCategory === c ? "var(--txt)" : "var(--txt-3)", background: incomeCategory === c ? "color-mix(in oklch,var(--accent) 14%,var(--surface))" : "var(--surface-2)" }} onClick={() => setIncomeCategory(c)}>{c}</button>
+                ))}
+              </div>
+            </div>
+          )}
           {type === "expense" && (
             <div className="field">
               <span className="label">Category <span className="muted">(type your own or pick a suggestion)</span></span>
-              {/* Free-text input — user can type anything */}
               <input
                 className="input"
                 placeholder="e.g. Bill, Grocery, or type your own…"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
               />
-              {/* Preset suggestions as quick-pick chips */}
               <div className="row" style={{ flexWrap: "wrap", gap: 6, marginTop: 4 }}>
                 {EXPENSE_CATS.map((c) => (
-                  <button
-                    key={c}
-                    className="chip"
-                    style={{
-                      cursor: "pointer", fontSize: 11.5,
-                      borderColor: category === c ? "var(--accent)" : "var(--line)",
-                      color:       category === c ? "var(--txt)"    : "var(--txt-3)",
-                      background:  category === c ? "color-mix(in oklch,var(--accent) 14%,var(--surface))" : "var(--surface-2)",
-                    }}
-                    onClick={() => setCategory(c)}
-                  >{c}</button>
+                  <button key={c} className="chip" style={{ cursor: "pointer", fontSize: 11.5, borderColor: category === c ? "var(--accent)" : "var(--line)", color: category === c ? "var(--txt)" : "var(--txt-3)", background: category === c ? "color-mix(in oklch,var(--accent) 14%,var(--surface))" : "var(--surface-2)" }} onClick={() => setCategory(c)}>{c}</button>
                 ))}
               </div>
             </div>
@@ -261,7 +267,7 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
     ...Object.fromEntries(data.banks.map((b) => [b.id, b.balance])),
   };
 
-  type DayEvent = { entry: Entry; signed: number };
+  type DayEvent = { entry: Entry; signed: number; isVirtual?: boolean };
   const dayEvents:  DayEvent[][] = Array.from({ length: n }, () => []);
   const dayDeltas:  Record<string, number>[] = Array.from({ length: n }, () => ({}));
 
@@ -292,6 +298,10 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
     }
   }
 
+  // CC billing cycle config
+  const ccStmtDay = data.accounts.credit.use ? (data.accounts.credit.statementDay ?? 0) : 0;
+  const ccPayDay  = data.accounts.credit.use ? (data.accounts.credit.payDay       ?? 0) : 0;
+
   const activeDays: {
     date: Date;
     events: DayEvent[];
@@ -300,16 +310,53 @@ function buildDailyBreakdown(data: RafaelData, months: number) {
     net: number;
   }[] = [];
 
+  // Track the credit balance recorded at each statement close
+  // so the correct amount is auto-paid on the planned payment day.
+  let lastStmtBalance = 0;   // credit balance at end of last statement date
+  let lastStmtDayIdx  = -99; // day index of that statement date
+
   for (let i = 0; i < n; i++) {
+    // Apply regular entry deltas
     for (const [id, delta] of Object.entries(dayDeltas[i])) {
       if (bal[id] !== undefined) bal[id] += delta;
     }
+
+    const date = addDays(rStart, i);
+    const dom  = date.getDate(); // day-of-month
+
+    // Record credit balance at statement close
+    if (ccStmtDay > 0 && dom === ccStmtDay) {
+      lastStmtBalance = bal["credit"] ?? 0;
+      lastStmtDayIdx  = i;
+    }
+
+    // Inject auto CC payment on planned pay day
+    if (ccPayDay > 0 && dom === ccPayDay && lastStmtBalance > 0 && lastStmtDayIdx < i) {
+      const payAmt = lastStmtBalance;
+      // Move money: debit decreases, credit debt cleared
+      bal["debit"]  = (bal["debit"]  ?? 0) - payAmt;
+      bal["credit"] = (bal["credit"] ?? 0) - payAmt; // debt reduced to 0
+
+      const virtualEntry: Entry = {
+        id:         `__cc_pay_${i}`,
+        type:       "transfer",
+        amount:     payAmt,
+        account:    "debit",
+        toAccount:  "credit",
+        category:   "Credit card payment",
+        note:       `${data.accounts.credit.name} — paid in full`,
+        recurrence: { kind: "once", date: isoDate(date) },
+        division:   null,
+      };
+      dayEvents[i].unshift({ entry: virtualEntry, signed: 0, isVirtual: true });
+      lastStmtBalance = 0; // reset — don't double-pay
+    }
+
     if (dayEvents[i].length > 0) {
       const net   = dayEvents[i].reduce((s, ev) => s + ev.signed, 0);
-      // Credit is a liability — subtract it from total net worth
       const total = accountDefs.reduce((s, a) => s + (a.isCredit ? -(bal[a.id] ?? 0) : (bal[a.id] ?? 0)), 0);
       activeDays.push({
-        date: addDays(rStart, i),
+        date,
         events: dayEvents[i],
         accountBals: accountDefs.map((a) => ({ id: a.id, name: a.name, isCredit: a.isCredit, balance: bal[a.id] ?? 0 })),
         total,
@@ -463,7 +510,7 @@ function DailyReport({ data, currency, canEdit, onDelete }: {
                     <span className="num" style={{ fontWeight: 700, fontSize: 14.5, color: col, whiteSpace: "nowrap", flexShrink: 0 }}>
                       {ev.entry.type === "transfer" ? "↔ " : ev.signed > 0 ? "+" : "−"}{fmtMoney(ev.entry.amount, currency)}
                     </span>
-                    {canEdit && (
+                    {canEdit && !ev.isVirtual && (
                       <button className="icon-btn" style={{ width: 30, height: 30, flexShrink: 0 }} title="Remove entry" onClick={() => onDelete(ev.entry.id)}>
                         <Icon name="trash" size={13} />
                       </button>
