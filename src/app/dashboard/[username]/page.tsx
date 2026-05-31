@@ -1,6 +1,5 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/app/actions";
 import { loadRafaelData, loadThrishaData } from "@/lib/tracker-helpers";
 import RafaelTracker from "@/components/tracker/rafael/RafaelTracker";
 import ThrishaTracker from "@/components/tracker/thrisha/ThrishaTracker";
@@ -42,81 +41,40 @@ export default async function PartnerPage({ params }: { params: Promise<{ userna
   const partner = asProfile(partnerRaw);
   if (!partner) notFound();
 
-  const currency    = partner.currency as Currency;
-  const theme       = partner.theme    as Theme;
-  const partnerTitle = username === "rafael" ? "Rafael's Portfolio" : "Thrisha's Garden";
-  const viewerName  = viewer.display_name ?? "You";
-  const partnerName = partner.display_name ?? username;
-
-  // Shared top bar + readonly banner markup — inlined to avoid nesting
-  // a component inside an async server component (causes double render in Next.js).
-  const topBar = (
-    <>
-      <header style={{ borderBottom: "1px solid var(--line)", background: "color-mix(in oklch, var(--bg) 82%, transparent)", backdropFilter: "blur(12px)", position: "relative", zIndex: 2 }}>
-        <div className="wrap between" style={{ paddingTop: 12, paddingBottom: 12, minHeight: 56, flexWrap: "wrap", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <a href="/dashboard" className="btn ghost" style={{ padding: "8px 12px", fontSize: 12.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-              ← <span className="tg-label">back</span>
-            </a>
-            <span className="display" style={{ fontSize: "clamp(14px,3vw,20px)", whiteSpace: "nowrap" }}>{partnerTitle}</span>
-          </div>
-          <form action={signOut}>
-            <button type="submit" className="btn ghost" style={{ padding: "8px 12px", fontSize: 12.5, whiteSpace: "nowrap" }}>
-              🔒 <span className="tg-label">lock</span>
-            </button>
-          </form>
-        </div>
-      </header>
-      <div className="readonly-bar" style={{ fontSize: 12 }}>
-        👁 Viewing as {viewerName} · look but don&apos;t touch — only {partnerName} can edit this
-      </div>
-    </>
-  );
+  const currency = partner.currency as Currency;
+  const theme    = partner.theme    as Theme;
 
   if (username === "rafael") {
     const data = await loadRafaelData(supabase, partner.id);
 
     if (!data.setupDone) {
-      return (
-        <div className="app" data-theme={theme}>
-          <div className="screen">
-            {topBar}
-            <PartnerNotSetUp name="Rafael" noun="portfolio" />
-          </div>
-        </div>
-      );
+      return <PartnerNotSetUp name="Rafael" noun="portfolio" />;
     }
 
     return (
-      <div className="app" data-theme={theme}>
-        <div className="screen">
-          {topBar}
-          <RafaelTracker initialData={data} userId={partner.id} canEdit={false} theme={theme} currency={currency} />
-        </div>
-      </div>
+      <RafaelTracker
+        initialData={data}
+        userId={partner.id}
+        canEdit={false}
+        theme={theme}
+        currency={currency}
+      />
     );
   }
 
-  // Thrisha
   const data = await loadThrishaData(supabase, partner.id);
 
   if (!data.setupDone || data.divisions.length === 0) {
-    return (
-      <div className="app" data-theme={theme}>
-        <div className="screen">
-          {topBar}
-          <PartnerNotSetUp name="Thrisha" noun="garden" />
-        </div>
-      </div>
-    );
+    return <PartnerNotSetUp name="Thrisha" noun="garden" />;
   }
 
   return (
-    <div className="app" data-theme={theme}>
-      <div className="screen">
-        {topBar}
-        <ThrishaTracker initialData={data} userId={partner.id} canEdit={false} theme={theme} currency={currency} />
-      </div>
-    </div>
+    <ThrishaTracker
+      initialData={data}
+      userId={partner.id}
+      canEdit={false}
+      theme={theme}
+      currency={currency}
+    />
   );
 }

@@ -50,24 +50,19 @@ export default async function PartnerLayout({
             zIndex: 2,
           }}
         >
-          <div className="wrap between" style={{ padding: "12px 0", minHeight: 64 }}>
-            <div className="row" style={{ gap: 10 }}>
-              {/* Back to own portfolio */}
-              <a
-                href="/dashboard"
-                className="btn ghost"
-                style={{ padding: "8px 12px", fontSize: 12.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 7 }}
-              >
-                ← back
+          <div className="wrap between" style={{ paddingTop: 12, paddingBottom: 12, minHeight: 56, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <a href="/dashboard" className="btn ghost" style={{ padding: "8px 12px", fontSize: 12.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                ← <span className="tg-label">back</span>
               </a>
-              <span className="display" style={{ fontSize: "clamp(16px,3vw,22px)" }}>
+              <span className="display" style={{ fontSize: "clamp(14px,3vw,20px)", whiteSpace: "nowrap" }}>
                 {partner.display_name}&apos;s {isRafael ? "Portfolio" : "Garden"}
               </span>
             </div>
 
             <form action={signOut}>
-              <button type="submit" className="btn ghost" style={{ padding: "8px 12px", fontSize: 12.5 }}>
-                🔒 lock
+              <button type="submit" className="btn ghost" style={{ padding: "8px 12px", fontSize: 12.5, whiteSpace: "nowrap" }}>
+                🔒 <span className="tg-label">lock</span>
               </button>
             </form>
           </div>
