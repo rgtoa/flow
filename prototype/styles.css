@@ -1,0 +1,310 @@
+/* ============================================================
+   MONEY FLOW — dual aesthetic system
+   [data-theme="billionaire"]  — Rafael: black, gold, serif luxury
+   [data-theme="girly"]        — Thrisha: blush, rose, lavender pop
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  background: #0a0a0b;
+  overflow: hidden;
+}
+#root { height: 100vh; height: 100dvh; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, select, textarea { font-family: inherit; }
+::selection { background: rgba(180,150,90,0.3); }
+
+/* ---------- THEME: BILLIONAIRE ---------- */
+[data-theme="billionaire"] {
+  --bg:        oklch(0.16 0.006 95);
+  --bg-2:      oklch(0.19 0.007 95);
+  --surface:   oklch(0.22 0.008 95);
+  --surface-2: oklch(0.26 0.009 95);
+  --line:      oklch(0.34 0.01 95);
+  --line-soft: oklch(0.28 0.008 95);
+  --txt:       oklch(0.95 0.012 90);
+  --txt-2:     oklch(0.74 0.015 90);
+  --txt-3:     oklch(0.55 0.012 90);
+  --accent:    oklch(0.82 0.11 84);   /* gold */
+  --accent-2:  oklch(0.88 0.06 84);
+  --accent-ink: oklch(0.2 0.03 84);
+  --pos:       oklch(0.78 0.13 152);  /* money green */
+  --neg:       oklch(0.65 0.18 26);   /* red */
+  --transfer:  oklch(0.74 0.1 240);
+  --font-display: "Marcellus", Georgia, serif;
+  --font-body: "Archivo", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", monospace;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --shadow: 0 18px 50px -22px rgba(0,0,0,0.85);
+  --glow: 0 0 0 1px rgba(190,160,90,0.18), 0 14px 44px -20px rgba(190,160,90,0.35);
+  --grain: 0.04;
+}
+
+/* ---------- THEME: GIRLY ---------- */
+[data-theme="girly"] {
+  --bg:        oklch(0.975 0.012 20);
+  --bg-2:      oklch(0.96 0.018 350);
+  --surface:   oklch(0.995 0.004 60);
+  --surface-2: oklch(0.97 0.015 350);
+  --line:      oklch(0.9 0.025 350);
+  --line-soft: oklch(0.93 0.02 350);
+  --txt:       oklch(0.35 0.06 350);
+  --txt-2:     oklch(0.52 0.06 350);
+  --txt-3:     oklch(0.68 0.05 350);
+  --accent:    oklch(0.72 0.16 5);     /* rose */
+  --accent-2:  oklch(0.82 0.1 350);
+  --accent-ink: oklch(0.99 0.01 350);
+  --pos:       oklch(0.72 0.13 165);   /* mint */
+  --neg:       oklch(0.66 0.19 12);    /* warm red */
+  --transfer:  oklch(0.72 0.12 285);   /* lavender */
+  --lav:       oklch(0.75 0.11 295);
+  --blue:      oklch(0.82 0.08 230);
+  --font-display: "DM Serif Display", Georgia, serif;
+  --font-body: "Quicksand", system-ui, sans-serif;
+  --font-num: "Quicksand", system-ui, sans-serif;
+  --radius: 16px;
+  --radius-lg: 26px;
+  --shadow: 0 20px 45px -24px rgba(190,90,130,0.4);
+  --glow: 0 0 0 1px rgba(220,150,180,0.4), 0 16px 40px -20px rgba(230,140,180,0.45);
+  --grain: 0;
+}
+
+/* ============================================================
+   APP SHELL
+   ============================================================ */
+.app {
+  height: 100%;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--font-body);
+  position: relative;
+  overflow: hidden;
+  transition: background 0.5s ease, color 0.5s ease;
+}
+.app::before {
+  /* texture / atmosphere layer */
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  opacity: 1;
+  z-index: 0;
+}
+[data-theme="billionaire"] .app::before {
+  background:
+    radial-gradient(1100px 600px at 80% -10%, rgba(200,168,96,0.12), transparent 60%),
+    radial-gradient(900px 700px at -5% 110%, rgba(200,168,96,0.06), transparent 55%);
+}
+[data-theme="girly"] .app::before {
+  background:
+    radial-gradient(900px 600px at 85% -8%, rgba(255,190,215,0.55), transparent 60%),
+    radial-gradient(820px 700px at -8% 108%, rgba(200,190,255,0.45), transparent 58%),
+    radial-gradient(600px 500px at 50% 120%, rgba(190,225,255,0.35), transparent 60%);
+}
+
+.screen {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: fadeUp 0.5s cubic-bezier(.2,.7,.2,1);
+}
+@keyframes fadeUp { from { transform: translateY(14px); } to { transform: none; } }
+@keyframes pop { from { transform: scale(.94); } to { transform: none; } }
+@keyframes shake { 10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(4px)} 30%,50%,70%{transform:translateX(-8px)} 40%,60%{transform:translateX(8px)} }
+
+/* scroll regions */
+.scroll { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* generic container */
+.wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 44px); }
+
+/* ============================================================
+   TYPE
+   ============================================================ */
+.display { font-family: var(--font-display); font-weight: 400; line-height: 1.02; letter-spacing: -0.01em; }
+[data-theme="billionaire"] .display { letter-spacing: 0.005em; }
+.eyebrow {
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--txt-3); font-weight: 600;
+}
+[data-theme="girly"] .eyebrow { letter-spacing: 0.18em; font-weight: 700; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 13px 22px; border-radius: var(--radius);
+  font-weight: 600; font-size: 14px; letter-spacing: 0.01em;
+  background: var(--surface-2); color: var(--txt);
+  border: 1px solid var(--line);
+  transition: transform .14s ease, background .2s, box-shadow .2s, border-color .2s, opacity .2s;
+  white-space: nowrap;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.primary {
+  background: var(--accent); color: var(--accent-ink);
+  border-color: transparent; box-shadow: var(--glow);
+}
+[data-theme="billionaire"] .btn.primary { font-family: var(--font-display); letter-spacing: 0.04em; }
+[data-theme="girly"] .btn.primary { font-weight: 700; }
+.btn.ghost { background: transparent; }
+.btn.lg { padding: 16px 30px; font-size: 15px; }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.icon-btn {
+  width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface);
+  color: var(--txt-2); transition: all .18s;
+}
+.icon-btn:hover { color: var(--txt); border-color: var(--accent); transform: translateY(-1px); }
+
+/* pill toggle group */
+.seg { display: inline-flex; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; gap: 2px; }
+.seg button {
+  padding: 9px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--txt-3);
+  transition: all .2s; white-space: nowrap;
+}
+.seg button.on { background: var(--accent); color: var(--accent-ink); box-shadow: var(--glow); }
+[data-theme="girly"] .seg button.on { font-weight: 700; }
+
+/* ============================================================
+   CARDS / SURFACES
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+[data-theme="billionaire"] .card { background: linear-gradient(180deg, var(--surface), var(--bg-2)); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--txt-2);
+}
+
+/* ============================================================
+   FORM CONTROLS
+   ============================================================ */
+.field { display: flex; flex-direction: column; gap: 8px; }
+.label { font-size: 12px; font-weight: 600; color: var(--txt-2); letter-spacing: 0.02em; }
+.input, .select {
+  width: 100%; padding: 14px 16px; font-size: 15px;
+  background: var(--surface); color: var(--txt);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  transition: border-color .18s, box-shadow .18s; outline: none;
+}
+.input:focus, .select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent); }
+.input::placeholder { color: var(--txt-3); }
+.input.num { font-family: var(--font-num); }
+
+/* choice tiles (income/expense/transfer, recurrence, etc) */
+.tiles { display: grid; gap: 12px; }
+.tile {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 18px; border-radius: var(--radius-lg);
+  background: var(--surface); border: 1.5px solid var(--line);
+  transition: all .18s; position: relative;
+}
+.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile.on { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 12%, var(--surface)); box-shadow: var(--glow); }
+.tile .t-title { font-weight: 700; font-size: 15px; }
+.tile .t-sub { font-size: 12.5px; color: var(--txt-3); }
+
+/* ============================================================
+   MODAL / SHEET
+   ============================================================ */
+.overlay {
+  position: absolute; inset: 0; z-index: 50;
+  background: color-mix(in oklch, var(--bg) 55%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fadeUp .25s ease;
+}
+@media (min-width: 720px) { .overlay { align-items: center; } }
+.sheet {
+  width: 100%; max-width: 560px; max-height: 92%;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow); display: flex; flex-direction: column;
+  animation: sheetUp .32s cubic-bezier(.2,.8,.2,1);
+}
+@media (min-width: 720px) { .sheet { border-radius: var(--radius-lg); } }
+@keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px; border-bottom: 1px solid var(--line-soft); }
+.sheet-body { padding: 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+.sheet-foot { padding: 18px 22px; border-top: 1px solid var(--line-soft); display: flex; gap: 12px; }
+
+/* ============================================================
+   MISC
+   ============================================================ */
+.divider { height: 1px; background: var(--line-soft); border: 0; }
+.row { display: flex; align-items: center; gap: 12px; }
+.between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stack { display: flex; flex-direction: column; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--txt-3); }
+.center { text-align: center; }
+.fade-in { animation: fadeUp .5s ease; }
+.pop-in { animation: pop .35s cubic-bezier(.2,.8,.2,1); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* tag colors */
+.t-income { color: var(--pos); }
+.t-expense { color: var(--neg); }
+.t-transfer { color: var(--transfer); }
+.bg-income { background: var(--pos); }
+.bg-expense { background: var(--neg); }
+.bg-transfer { background: var(--transfer); }
+
+/* read-only banner */
+.readonly-bar {
+  display: flex; align-items: center; gap: 10px; justify-content: center;
+  padding: 9px 16px; font-size: 12.5px; font-weight: 600;
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
+  color: var(--txt); border-bottom: 1px solid var(--line);
+}
+
+/* sparkle bits for girly */
+.sparkle { display: none; }
+[data-theme="girly"] .sparkle { display: inline; }
+
+/* range inputs (allocation sliders) */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  height: 8px; border-radius: 999px; background: var(--surface-2);
+  border: 1px solid var(--line); outline: none; cursor: pointer;
+}
+input[type="range"].alloc-range { accent-color: var(--accent); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); border: 3px solid var(--surface);
+  box-shadow: 0 2px 8px -1px rgba(0,0,0,0.35); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); border: 3px solid var(--surface); cursor: pointer;
+}
+
+/* no select on chrome */
+.no-sel { user-select: none; -webkit-user-select: none; }
+
+/* aesthetic toggle labels collapse to icons on small screens */
+.tg-label { display: inline; }
+@media (max-width: 600px) {
+  .tg-label { display: none; }
+  .seg button { padding: 9px 13px; }
+}
