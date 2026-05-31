@@ -6,8 +6,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
-  buildProjection, buildAccountSchedule, rafOpening, fmtMoney, fmtDate,
-  parseDate, startOfDay, addDays, dayIndex, expandOccurrences,
+  buildProjection, rafOpening, fmtMoney, fmtDate,
+  parseDate, startOfDay, addDays, addMonths, dayIndex, expandOccurrences,
   RANGE_OPTIONS, EXPENSE_CATS, recurrenceLabel, todayISO,
   COPY, ordinal, pick,
 } from "@/lib/engine";
@@ -221,72 +221,173 @@ function RafaelSetupSheet({ data, onClose, onSave }: { data: RafaelData; onClose
   );
 }
 
-// ── Transaction Row ───────────────────────────────────────────────────────────
-function TxnRow({ data, e, canEdit, onDelete, currency }: { data: RafaelData; e: Entry; canEdit: boolean; onDelete: (id: string) => void; currency: Currency }) {
-  const col = e.type === "income" ? "var(--pos)" : e.type === "expense" ? "var(--neg)" : "var(--transfer)";
-  const ic  = e.type === "income" ? "arrowUp"    : e.type === "expense" ? "arrowDown"  : "transfer";
-  return (
-    <div className="row" style={{ padding: "13px 4px", borderBottom: "1px solid var(--line-soft)", gap: 13 }}>
-      <div style={{ width: 38, height: 38, borderRadius: "50%", flex: "none", display: "flex", alignItems: "center", justifyContent: "center", background: `color-mix(in oklch,${col} 16%,var(--surface))`, color: col }}>
-        <Icon name={ic} size={17} />
-      </div>
-      <div className="grow stack" style={{ gap: 2 }}>
-        <span style={{ fontWeight: 600, fontSize: 14.5 }}>{e.category}{e.note ? <span className="muted" style={{ fontWeight: 400 }}> · {e.note}</span> : null}</span>
-        <span className="muted" style={{ fontSize: 12 }}>{recurrenceLabel(e.recurrence)} · {accountName(data, e.account ?? "")}
-          {e.type === "transfer" ? " → " + accountName(data, e.toAccount ?? "") : ""}
-        </span>
-      </div>
-      <span className="num" style={{ fontWeight: 700, fontSize: 15, color: col }}>
-        {e.type === "transfer" ? "" : e.type === "income" ? "+" : "−"}{fmtMoney(e.amount, currency)}
-      </span>
-      {canEdit && <button className="icon-btn" style={{ width: 34, height: 34 }} onClick={() => onDelete(e.id)}><Icon name="trash" size={15} /></button>}
-    </div>
-  );
+// ── Daily Report ──────────────────────────────────────────────────────────────
+// Computes per-day events + account balances for every day that has activity.
+function buildDailyBreakdown(data: RafaelData, months: number) {
+  const rStart = startOfDay(parseDate(data.startDate));
+  const rEnd   = addMonths(rStart, months);
+  const n      = dayIndex(rStart, rEnd) + 1;
+
+  const accountDefs = [
+    { id: "debit",  name: data.accounts.debit.name  },
+    ...(data.accounts.credit.use ? [{ id: "credit", name: data.accounts.credit.name }] : []),
+    ...data.banks.map((b) => ({ id: b.id, name: b.name })),
+  ];
+  const bal: Record<string, number> = {
+    debit: data.accounts.debit.balance,
+    ...(data.accounts.credit.use ? { credit: data.accounts.credit.balance } : {}),
+    ...Object.fromEntries(data.banks.map((b) => [b.id, b.balance])),
+  };
+
+  type DayEvent = { entry: Entry; signed: number };
+  const dayEvents:  DayEvent[][] = Array.from({ length: n }, () => []);
+  const dayDeltas:  Record<string, number>[] = Array.from({ length: n }, () => ({}));
+
+  for (const e of data.entries) {
+    const occ    = expandOccurrences(e.recurrence, rStart, rEnd);
+    const signed = e.type === "income" ? e.amount : e.type === "expense" ? -e.amount : 0;
+    for (const od of occ) {
+      const idx = dayIndex(rStart, od);
+      if (idx < 0 || idx >= n) continue;
+      dayEvents[idx].push({ entry: e, signed });
+      if (e.type === "income"   && e.account)
+        dayDeltas[idx][e.account] = (dayDeltas[idx][e.account] || 0) + e.amount;
+      if (e.type === "expense"  && e.account)
+        dayDeltas[idx][e.account] = (dayDeltas[idx][e.account] || 0) - e.amount;
+      if (e.type === "transfer" && e.account && e.toAccount) {
+        dayDeltas[idx][e.account]    = (dayDeltas[idx][e.account]    || 0) - e.amount;
+        dayDeltas[idx][e.toAccount]  = (dayDeltas[idx][e.toAccount]  || 0) + e.amount;
+      }
+    }
+  }
+
+  const activeDays: {
+    date: Date;
+    events: DayEvent[];
+    accountBals: { id: string; name: string; balance: number }[];
+    total: number;
+    net: number;
+  }[] = [];
+
+  for (let i = 0; i < n; i++) {
+    for (const [id, delta] of Object.entries(dayDeltas[i])) {
+      if (bal[id] !== undefined) bal[id] += delta;
+    }
+    if (dayEvents[i].length > 0) {
+      const net   = dayEvents[i].reduce((s, ev) => s + ev.signed, 0);
+      const total = accountDefs.reduce((s, a) => s + (bal[a.id] ?? 0), 0);
+      activeDays.push({
+        date: addDays(rStart, i),
+        events: dayEvents[i],
+        accountBals: accountDefs.map((a) => ({ ...a, balance: bal[a.id] ?? 0 })),
+        total,
+        net,
+      });
+    }
+  }
+
+  return { activeDays, accounts: accountDefs };
 }
 
-// ── Account Schedule ──────────────────────────────────────────────────────────
-function AccountSchedule({ schedule, currency }: { schedule: ReturnType<typeof buildAccountSchedule>; currency: Currency }) {
-  const { accounts, rows } = schedule;
-  const [open, setOpen] = useState(true);
-  if (!rows.length) return null;
-  const colW = 116;
+function DailyReport({ data, currency, canEdit, range, setRange, onDelete }: {
+  data: RafaelData; currency: Currency; canEdit: boolean;
+  range: string; setRange: (r: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const months = RANGE_OPTIONS.find((r: RangeOption) => r.key === range)!.months;
+  const { activeDays, accounts } = useMemo(
+    () => buildDailyBreakdown(data, months),
+    [data, months], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const today = startOfDay(new Date());
+
   return (
-    <div className="stack" style={{ gap: 12, marginTop: 22 }}>
-      <button className="between" onClick={() => setOpen((v) => !v)} style={{ cursor: "pointer", width: "100%" }}>
-        <div className="stack" style={{ gap: 2, textAlign: "left" }}>
-          <span className="display" style={{ fontSize: 20 }}>Balances by month</span>
-          <span className="muted" style={{ fontSize: 12.5 }}>End-of-month position across every account</span>
+    <div className="stack" style={{ gap: 16 }}>
+      {/* Header row */}
+      <div className="between" style={{ flexWrap: "wrap", gap: 10 }}>
+        <div className="stack" style={{ gap: 2 }}>
+          <span className="display" style={{ fontSize: 22 }}>Daily money flow</span>
+          <span className="muted" style={{ fontSize: 12.5 }}>Every event + account balances, day by day</span>
         </div>
-        <span className="icon-btn" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }}><Icon name="chevD" size={17} /></span>
-      </button>
-      {open && (
-        <div className="card" style={{ boxShadow: "none", overflow: "hidden" }}>
-          <div className="scroll" style={{ maxHeight: 380, overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 320 + accounts.length * colW }}>
-              <thead>
-                <tr>
-                  <th style={{ position: "sticky", top: 0, left: 0, zIndex: 3, background: "var(--bg-2)", color: "var(--txt-3)", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, textAlign: "left", padding: "12px 14px", whiteSpace: "nowrap", borderBottom: "1px solid var(--line)" }}>Month</th>
-                  {accounts.map((a) => (
-                    <th key={a.id} style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--bg-2)", color: "var(--txt-3)", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, textAlign: "right", padding: "12px 14px", whiteSpace: "nowrap", borderBottom: "1px solid var(--line)", minWidth: colW }}>{a.name}</th>
-                  ))}
-                  <th style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--bg-2)", color: "var(--accent)", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, textAlign: "right", padding: "12px 14px", whiteSpace: "nowrap", borderBottom: "1px solid var(--line)", minWidth: colW }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} style={{ background: i % 2 ? "color-mix(in oklch,var(--surface-2) 40%,transparent)" : "transparent" }}>
-                    <td style={{ position: "sticky", left: 0, zIndex: 1, background: "var(--surface)", padding: "11px 14px", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px solid var(--line-soft)" }}>{r.label}</td>
-                    {accounts.map((a) => (
-                      <td key={a.id} style={{ padding: "11px 14px", fontSize: 13.5, textAlign: "right", whiteSpace: "nowrap", fontFamily: "var(--font-num)", fontVariantNumeric: "tabular-nums", color: r.balances[a.id] < 0 ? "var(--neg)" : "var(--txt)", borderBottom: "1px solid var(--line-soft)" }}>{fmtMoney(r.balances[a.id], currency)}</td>
-                    ))}
-                    <td style={{ padding: "11px 14px", fontSize: 13.5, textAlign: "right", whiteSpace: "nowrap", fontFamily: "var(--font-num)", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: r.total < 0 ? "var(--neg)" : "var(--accent)", borderBottom: "1px solid var(--line-soft)" }}>{fmtMoney(r.total, currency)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="seg" style={{ flexWrap: "wrap" }}>
+          {RANGE_OPTIONS.map((r: RangeOption) => (
+            <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)}>{r.label}</button>
+          ))}
         </div>
+      </div>
+
+      {activeDays.length === 0 && (
+        <p className="muted center" style={{ padding: "30px 0", fontSize: 14 }}>No transactions to show for this range.</p>
       )}
+
+      {activeDays.map((day, di) => {
+        const isPast   = day.date < today;
+        const isToday  = fmtDate(day.date) === fmtDate(today);
+        const dateLabel = isToday ? "Today" : fmtDate(day.date, { weekday: "short", month: "short", day: "numeric" });
+        const netColor = day.net > 0 ? "var(--pos)" : day.net < 0 ? "var(--neg)" : "var(--txt-3)";
+
+        return (
+          <div key={di} className="card" style={{ padding: 0, overflow: "hidden", opacity: isPast && !isToday ? 0.78 : 1 }}>
+            {/* Day header */}
+            <div className="between" style={{ padding: "12px 18px", background: "var(--surface-2)", borderBottom: "1px solid var(--line-soft)", flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>{dateLabel}</span>
+              <span className="num" style={{ fontSize: 13, fontWeight: 700, color: netColor }}>
+                {day.net > 0 ? "+" : day.net < 0 ? "−" : ""}{fmtMoney(Math.abs(day.net), currency)} net
+              </span>
+            </div>
+
+            {/* Events */}
+            <div className="stack">
+              {day.events.map((ev, ei) => {
+                const col = ev.entry.type === "income" ? "var(--pos)" : ev.entry.type === "expense" ? "var(--neg)" : "var(--transfer)";
+                const ic  = ev.entry.type === "income" ? "arrowUp" : ev.entry.type === "expense" ? "arrowDown" : "transfer";
+                return (
+                  <div key={ei} className="row" style={{ padding: "11px 18px", borderBottom: "1px solid var(--line-soft)", gap: 12, flexWrap: "nowrap" }}>
+                    <div style={{ width: 34, height: 34, borderRadius: "50%", flex: "none", display: "flex", alignItems: "center", justifyContent: "center", background: `color-mix(in oklch,${col} 16%,var(--surface))`, color: col }}>
+                      <Icon name={ic} size={15} />
+                    </div>
+                    <div className="grow stack" style={{ gap: 2, minWidth: 0 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>
+                        {ev.entry.category}
+                        {ev.entry.note ? <span className="muted" style={{ fontWeight: 400 }}> · {ev.entry.note}</span> : null}
+                      </span>
+                      <span className="muted" style={{ fontSize: 11.5 }}>
+                        {accountName(data, ev.entry.account ?? "")}
+                        {ev.entry.type === "transfer" ? " → " + accountName(data, ev.entry.toAccount ?? "") : ""}
+                        {" · "}{recurrenceLabel(ev.entry.recurrence)}
+                      </span>
+                    </div>
+                    <span className="num" style={{ fontWeight: 700, fontSize: 14.5, color: col, whiteSpace: "nowrap", flexShrink: 0 }}>
+                      {ev.entry.type === "transfer" ? "↔ " : ev.signed > 0 ? "+" : "−"}{fmtMoney(ev.entry.amount, currency)}
+                    </span>
+                    {canEdit && (
+                      <button className="icon-btn" style={{ width: 30, height: 30, flexShrink: 0 }} title="Remove entry" onClick={() => onDelete(ev.entry.id)}>
+                        <Icon name="trash" size={13} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Account balances at end of day */}
+            <div style={{ padding: "10px 18px", display: "flex", flexWrap: "wrap", gap: "6px 18px", background: "color-mix(in oklch,var(--accent) 5%,var(--surface))", borderTop: "1px solid var(--line-soft)" }}>
+              {day.accountBals.map((a) => (
+                <span key={a.id} style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+                  <span className="muted">{a.name}: </span>
+                  <span className="num" style={{ fontWeight: 700, color: a.balance < 0 ? "var(--neg)" : "var(--txt)" }}>{fmtMoney(a.balance, currency)}</span>
+                </span>
+              ))}
+              {accounts.length > 1 && (
+                <span style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+                  <span className="muted">Total: </span>
+                  <span className="num" style={{ fontWeight: 700, color: day.total < 0 ? "var(--neg)" : "var(--accent)" }}>{fmtMoney(day.total, currency)}</span>
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -415,7 +516,6 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
   const months   = RANGE_OPTIONS.find((r: RangeOption) => r.key === range)!.months;
   const opening  = rafOpening(data);
   const projection = useMemo(() => buildProjection(data.entries, opening, parseDate(data.startDate), months), [data.entries, opening, data.startDate, months]);
-  const schedule   = useMemo(() => buildAccountSchedule(data, parseDate(data.startDate), months), [data, months]);
 
   const surplus    = projection.totalIn - projection.totalOut;
   const avgMonthly = surplus / months;
@@ -516,16 +616,19 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
           </div>
         </div>
 
-        {/* Money moves */}
-        <div className="card" style={{ padding: "8px 20px 16px" }}>
-          <div className="between" style={{ padding: "14px 0 6px", flexWrap: "wrap", gap: 10 }}>
-            <span className="display" style={{ fontSize: 21 }}>Money moves</span>
-            {canEdit && <button className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} /> {c.addCta}</button>}
-          </div>
-          <div className="stack">
-            {data.entries.length === 0 && <p className="muted center" style={{ padding: 30 }}>No transactions yet.</p>}
-            {data.entries.map((e) => <TxnRow key={e.id} data={data} e={e} canEdit={canEdit} currency={currency} onDelete={handleDelete} />)}
-          </div>
+        {/* Daily money flow report */}
+        <div className="card" style={{ padding: "18px 20px" }}>
+          {canEdit && (
+            <div className="between" style={{ marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+              <span />
+              <button className="btn primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} /> {c.addCta}</button>
+            </div>
+          )}
+          {data.entries.length === 0 ? (
+            <p className="muted center" style={{ padding: 30 }}>No transactions yet — add one above.</p>
+          ) : (
+            <DailyReport data={data} currency={currency} canEdit={canEdit} range={range} setRange={setRange} onDelete={handleDelete} />
+          )}
         </div>
 
         {/* Visualization */}
@@ -549,7 +652,6 @@ export default function RafaelTracker({ initialData, userId, canEdit, theme, cur
             </div>
             <Visualization key={vizKey} projection={projection} theme={theme} currency={currency} range={range} setRange={setRange} stats={rafStats}
               headline={`Opening ${fmtMoney(opening, currency)} → ${months >= 12 ? (months / 12) + " yr" : months + " mo"} out`} />
-            <AccountSchedule schedule={schedule} currency={currency} />
           </div>
         )}
 
