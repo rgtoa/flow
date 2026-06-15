@@ -52,6 +52,8 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Skip Next.js internals and static files; always run on app routes
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|svg|ico)$).*)",
+    // Also skip PWA assets (manifest, service worker, generated icons) so they
+    // are served directly instead of being redirected to /login when logged out.
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icon|apple-icon|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webmanifest|js)$).*)",
   ],
 };

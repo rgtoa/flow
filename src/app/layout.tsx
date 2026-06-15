@@ -1,9 +1,28 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import RegisterSW from "@/components/pwa/RegisterSW";
 
 export const metadata: Metadata = {
   title: "Flow — Private Money Tracker",
   description: "Rafael & Thrisha's personal money flow app",
+  applicationName: "Flow",
+  manifest: "/manifest.webmanifest",
+  // Standalone "real app" behaviour on iOS. statusBarStyle is overridden
+  // per-theme on the dashboard (see dashboard/page.tsx) so the status bar
+  // icons stay legible on both the dark and light themes.
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Flow" },
+  other: { "mobile-web-app-capable": "yes" },
+  formatDetection: { telephone: false },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0a0b",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  // Draw under the notch/home indicator; globals.css pads with safe-area insets.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -26,7 +45,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <RegisterSW />
+      </body>
     </html>
   );
 }

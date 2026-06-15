@@ -4,11 +4,25 @@ import { signOut } from "@/app/actions";
 import { loadRafaelData, loadThrishaData } from "@/lib/tracker-helpers";
 import RafaelTracker from "@/components/tracker/rafael/RafaelTracker";
 import ThrishaTracker from "@/components/tracker/thrisha/ThrishaTracker";
+import type { Metadata } from "next";
 import type { Profile } from "@/lib/database.types";
 import type { RafaelData, ThrishaData, Currency, Theme } from "@/lib/types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function asProfile(d: any): Profile | null { return d as Profile | null; }
+
+// The PWA launches at /dashboard, so this is where the iOS status bar style is
+// captured at install/launch time. Pick the icon colour that contrasts with the
+// owner's theme: dark icons on Thrisha's light theme, white on Rafael's dark.
+export async function generateMetadata(): Promise<Metadata> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return {};
+  const { data } = await supabase.from("profiles").select("theme").eq("id", user.id).single();
+  const theme = (data as { theme?: string } | null)?.theme;
+  const statusBarStyle = theme === "girly" ? "default" : "black-translucent";
+  return { appleWebApp: { capable: true, statusBarStyle, title: "Flow" } };
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient();
