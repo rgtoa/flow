@@ -77,6 +77,7 @@ input, select, textarea { font-family: inherit; }
    ============================================================ */
 .app {
   height: 100%;
+  height: 100dvh;          /* fill the whole screen incl. iOS dynamic toolbars */
   background: var(--bg);
   color: var(--txt);
   font-family: var(--font-body);
@@ -103,10 +104,11 @@ input, select, textarea { font-family: inherit; }
   position: relative; z-index: 1;
   height: 100%; display: flex; flex-direction: column;
   animation: fadeUp 0.5s cubic-bezier(.2, .7, .2, 1);
-  /* iOS standalone (Add to Home Screen): keep UI clear of the notch, status
-     bar and home indicator. Insets are 0 in a normal browser tab. */
+  /* iOS standalone: only inset the TOP (clear the notch/status bar) and sides.
+     The bottom is intentionally NOT inset so the themed background fills to the
+     screen edge — scroll content clears the home indicator via its own padding
+     (see .scroll.grow) rather than leaving a band of background at the bottom. */
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
@@ -120,6 +122,10 @@ input, select, textarea { font-family: inherit; }
 }
 
 .scroll { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+/* Main scrollers without an explicit bottom padding still clear the iOS home
+   indicator. (Scrollers that set their own paddingBottom inline keep it — 40px
+   already exceeds the home-indicator inset.) */
+.scroll.grow { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
 .scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
 .scroll::-webkit-scrollbar-track { background: transparent; }

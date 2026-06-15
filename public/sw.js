@@ -8,7 +8,7 @@
  *
  * Bump CACHE when you want to drop the old cache on the next activate.
  */
-const CACHE = "flow-v1";
+const CACHE = "flow-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
